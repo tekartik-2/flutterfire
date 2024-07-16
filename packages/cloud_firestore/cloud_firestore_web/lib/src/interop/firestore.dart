@@ -100,24 +100,8 @@ class Firestore extends JsObjectWrapper<firestore_interop.FirestoreJsImpl> {
         firestore_interop.enableIndexedDbPersistence(jsObject).toDart;
   }
 
-// purely for debug mode and tracking listeners to clean up on "hot restart"
-  final Map<String, int> _snapshotInSyncListeners = {};
-  String _snapshotInSyncWindowsKey() {
-    if (kDebugMode) {
-      final key = 'flutterfire-${app.name}_snapshotInSync';
-      if (_snapshotInSyncListeners.containsKey(key)) {
-        _snapshotInSyncListeners[key] = _snapshotInSyncListeners[key]! + 1;
-      } else {
-        _snapshotInSyncListeners[key] = 0;
-      }
-      return '$key-${_snapshotInSyncListeners[key]}';
-    }
-    return 'no-op';
-  }
-
   Stream<void> snapshotsInSync() {
-    final snapshotKey = _snapshotInSyncWindowsKey();
-    unsubscribeWindowsListener(snapshotKey);
+    late String snapshotKey;
     late StreamController<void> controller;
     late JSFunction onSnapshotsInSyncUnsubscribe;
     var nextWrapper = ((JSObject? noValue) {
@@ -125,6 +109,8 @@ class Firestore extends JsObjectWrapper<firestore_interop.FirestoreJsImpl> {
     }).toJS;
 
     void startListen() {
+      snapshotKey = _snapshotInSyncWindowsKey();
+      unsubscribeWindowsListener(snapshotKey);
       onSnapshotsInSyncUnsubscribe =
           firestore_interop.onSnapshotsInSync(jsObject, nextWrapper);
       setWindowsListener(
@@ -221,43 +207,35 @@ class Firestore extends JsObjectWrapper<firestore_interop.FirestoreJsImpl> {
 
   // purely for debug mode and tracking listeners to clean up on "hot restart"
   final Map<String, int> _docListeners = {};
+  // purely for debug mode and tracking listeners to clean up on "hot restart"
+  final Map<String, int> _snapshotListeners = {};
+  // purely for debug mode and tracking listeners to clean up on "hot restart"
+  final Map<String, int> _snapshotInSyncListeners = {};
+
   String _documentSnapshotWindowsKey(String path) {
     if (kDebugMode) {
-      final key = 'flutterfire-${app.name}_${path}_documentSnapshot';
-      var refCount = _docListeners[key] = (_docListeners[key] ?? 0) + 1;
-      return '$key-$refCount';
+      final pathWindowsKey = 'flutterfire-${app.name}_${path}_documentSnapshot';
+      return _docListeners.addWindowsKey(pathWindowsKey);
     }
     return 'no-op';
-  }
-
-  void _removeDocumentSnapshotWindowsKey(String key) {
-    if (kDebugMode) {
-      var refCount = (_docListeners[key] ?? 0) - 1;
-      if (refCount <= 0) {
-        _docListeners.remove(key);
-      }
-    }
   }
 
   // purely for debug mode and tracking listeners to clean up on "hot restart"
-  final Map<String, int> _snapshotListeners = {};
   String _querySnapshotWindowsKey(hashCode) {
     if (kDebugMode) {
-      final key = 'flutterfire-${app.name}_${hashCode}_querySnapshot';
-      var refCount =
-          _snapshotListeners[key] = (_snapshotListeners[key] ?? 0) + 1;
-      return '$key-$refCount';
+      final pathWindowsKey =
+          'flutterfire-${app.name}_${hashCode}_querySnapshot';
+      return _snapshotListeners.addWindowsKey(pathWindowsKey);
     }
     return 'no-op';
   }
 
-  void _removeQuerySnapshotWindowsKey(String key) {
+  String _snapshotInSyncWindowsKey() {
     if (kDebugMode) {
-      var refCount = (_snapshotListeners[key] ?? 0) - 1;
-      if (refCount <= 0) {
-        _snapshotListeners.remove(key);
-      }
+      final pathWindowsKey = 'flutterfire-${app.name}_snapshotInSync';
+      return _snapshotInSyncListeners.addWindowsKey(pathWindowsKey);
     }
+    return 'no-op';
   }
 }
 
@@ -469,7 +447,6 @@ class DocumentReference
     void stopListen() {
       onSnapshotUnsubscribe.callAsFunction();
       removeWindowsListener(documentKey);
-      firestore._removeDocumentSnapshotWindowsKey(documentKey);
     }
 
     return controller = StreamController<DocumentSnapshot>.broadcast(
@@ -583,7 +560,6 @@ class Query<T extends firestore_interop.QueryJsImpl>
     void stopListen() {
       onSnapshotUnsubscribe.callAsFunction();
       removeWindowsListener(snapshotKey);
-      firestore._removeQuerySnapshotWindowsKey(snapshotKey);
     }
 
     return controller = StreamController<QuerySnapshot>.broadcast(
@@ -1082,5 +1058,17 @@ class AggregateQuerySnapshot
     } else {
       return (value as num).toDouble();
     }
+  }
+}
+
+extension on Map<String, int> {
+  String _pathToKey(String path, int index) {
+    return '$path-$index';
+  }
+
+  String addWindowsKey(String pathWindowsKey) {
+    var index = this[pathWindowsKey] = (this[pathWindowsKey] ?? -1) + 1;
+    var windowsKey = _pathToKey(pathWindowsKey, index);
+    return windowsKey;
   }
 }
